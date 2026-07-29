@@ -1,7 +1,8 @@
 # Gemini Chat Streamlit App
 
-A simple Streamlit chatbot that uses Google Gemini to respond to chat messages.
-Chaatbot link: https://enterprise-chatbot.streamlit.app/
+A simple Streamlit chatbot that uses Google Gemini to respond to chat messages.  
+
+Chatbot link: https://enterprise-chatbot.streamlit.app/
 
 ## Features
 - Chat-style interface built with Streamlit

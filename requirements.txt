@@ -1,2 +1,8 @@
 # Runtime dependencies for the current Streamlit Gemini app
 google-generativeai==0.8.6
+beautifulsoup4==4.12.3
+PyPDF2==3.0.1
+requests==2.32.3
+qdrant-client==1.11.3
+langchain-google-genai==2.0.7
+langchain-qdrant==0.2.0

@@ -1,62 +1,109 @@
-import os
-from pathlib import Path
-import importlib.util
-
 import streamlit as st
-
-
-def load_env_file(file_name=".env"):
-    env_path = Path(file_name)
-    if not env_path.exists():
-        return
-
-    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-
-        key, value = line.split("=", 1)
-        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
-
-
-def get_config():
-    load_env_file()
-    cfg_api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GEMINI_KEY")
-    cfg_model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-    return cfg_api_key, cfg_model_name
-
-
-def get_gemini_response(messages, model):
-    transcript = "\n".join(
-        f"{entry['role']}: {entry['content']}" for entry in messages
-    )
-    request_prompt = (
-        "Continue this conversation as a helpful assistant.\n\n"
-        f"{transcript}\nassistant:"
-    )
-    response = model.generate_content(request_prompt)
-    return (response.text or "").strip()
+from config import GeminiConfigError
+from gemini_client import create_gemini_model
+from rag_ingestion import (
+    QdrantConfigError,
+    answer_with_rag_only,
+    has_ingested_documents,
+    ingest_sources_to_qdrant,
+)
 
 
 st.set_page_config(page_title="Gemini Chat", page_icon="chat")
 st.title("Gemini Chatbot")
 
-gemini_api_key, gemini_model_name = get_config()
-if not gemini_api_key:
-    st.error("Missing GEMINI_API_KEY or GEMINI_KEY in .env")
+
+def is_valid_url(url: str) -> bool:
+    trimmed = url.strip().lower()
+    return trimmed.startswith("http://") or trimmed.startswith("https://")
+
+try:
+    gemini_model = create_gemini_model()
+except GeminiConfigError as exc:
+    st.error(str(exc))
     st.stop()
-
-if importlib.util.find_spec("google.generativeai") is None:
-    st.error("Missing dependency: install google-generativeai")
+except ModuleNotFoundError as exc:
+    st.error(str(exc))
     st.stop()
-
-import google.generativeai as genai
-
-genai.configure(api_key=gemini_api_key)
-gemini_model = genai.GenerativeModel(gemini_model_name)
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
+
+if "uploaded_pdfs" not in st.session_state:
+    st.session_state.uploaded_pdfs = []
+
+if "source_links" not in st.session_state:
+    st.session_state.source_links = []
+
+with st.sidebar:
+    st.header("Knowledge Sources")
+    st.caption("Upload PDFs or add web links for future RAG integration.")
+
+    uploaded_files = st.file_uploader(
+        "Upload PDF files",
+        type=["pdf"],
+        accept_multiple_files=True,
+        help="These files are stored in session state for now.",
+    )
+
+    if uploaded_files:
+        st.session_state.uploaded_pdfs = uploaded_files
+
+    st.write("PDFs in session:")
+    if st.session_state.uploaded_pdfs:
+        for pdf_file in st.session_state.uploaded_pdfs:
+            st.markdown(f"- {pdf_file.name}")
+    else:
+        st.caption("No PDFs uploaded yet.")
+
+    st.divider()
+    new_link = st.text_input(
+        "Add a web link",
+        placeholder="https://example.com/article",
+    )
+
+    if st.button("Add Link", use_container_width=True):
+        cleaned = new_link.strip()
+        if not cleaned:
+            st.warning("Please enter a link before adding.")
+        elif not is_valid_url(cleaned):
+            st.warning("Only http:// or https:// links are supported.")
+        elif cleaned in st.session_state.source_links:
+            st.info("This link is already in the list.")
+        else:
+            st.session_state.source_links.append(cleaned)
+            st.success("Link added.")
+
+    st.write("Links in session:")
+    if st.session_state.source_links:
+        for link in st.session_state.source_links:
+            st.markdown(f"- {link}")
+    else:
+        st.caption("No links added yet.")
+
+    if st.button("Clear Sources", use_container_width=True):
+        st.session_state.uploaded_pdfs = []
+        st.session_state.source_links = []
+        st.success("Cleared all sidebar sources.")
+
+    st.divider()
+    if st.button("Ingest Sources to Qdrant", use_container_width=True):
+        with st.spinner("Extracting, chunking, and storing vectors..."):
+            try:
+                result = ingest_sources_to_qdrant(
+                    uploaded_files=st.session_state.uploaded_pdfs,
+                    source_links=st.session_state.source_links,
+                )
+                st.success(
+                    (
+                        f"{result['status']} Stored {result['chunks_stored']} chunks "
+                        f"in collection {result['collection']} using {result['embedding_model']}."
+                    )
+                )
+            except (GeminiConfigError, QdrantConfigError, ValueError) as exc:
+                st.error(str(exc))
+            except Exception as exc:
+                st.error(f"Ingestion failed: {exc}")
 
 for chat_message in st.session_state.messages:
     with st.chat_message(chat_message["role"]):
@@ -70,9 +117,19 @@ if user_prompt := st.chat_input("Type your message"):
 
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
-            reply = get_gemini_response(st.session_state.messages, gemini_model)
-            if not reply:
-                reply = "No response returned."
+            try:
+                if has_ingested_documents():
+                    reply = answer_with_rag_only(user_prompt, gemini_model)
+                else:
+                    reply = (
+                        "No ingested documents found in Qdrant collection my-chat-documents. "
+                        "Please ingest PDFs or weblinks first.\n\n"
+                        "References:\n- None"
+                    )
+            except (GeminiConfigError, QdrantConfigError, ValueError) as exc:
+                reply = f"RAG error: {exc}\n\nReferences:\n- None"
+            except Exception as exc:
+                reply = f"RAG retrieval failed: {exc}\n\nReferences:\n- None"
         st.markdown(reply)
 
     st.session_state.messages.append({"role": "assistant", "content": reply})

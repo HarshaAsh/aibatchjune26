@@ -114,3 +114,28 @@ def get_gemini_model(model_name: str = "gemini-1.5-pro") -> ChatGoogleGenerative
 - Multi-agent orchestration using LangGraph
 - Login and authentication for users
 - Do not build agentic flow unless mentioned in the prompt. Only build agentic flow if the prompt explicitly asks for it.
+
+## Latest Plan (summary)
+Added on 2026-08-14: core architectural decisions and next-work items to guide Copilot and contributors.
+
+- Orchestration: use LangGraph / StateGraph as the primary supervisor orchestration framework. Implement a `Supervisor` that routes queries to `sql_agent`, `rag_agent`, or both, asks clarifying questions, and enforces a max iteration limit (default 2).
+- Agents:
+  - `rag_agent`: use Qdrant for vector retrieval and Gemini for answer synthesis; always include references and refuse to hallucinate beyond context.
+  - `sql_agent`: Postgres primary via SQLAlchemy for read-only reporting queries; sanitise SQL, disallow DML/DDL, and enforce a default `LIMIT` (50).
+  - `visualisation_agent`: produce Plotly interactive charts and PNG thumbnails for Streamlit UI.
+- Auth & Admin: use Supabase for authentication, roles, and minimal metadata; embed an admin panel inside the Streamlit app for DB/config management, ingestion control, and retention/purge operations.
+- Data stores: Qdrant remains the primary vector DB; Supabase stores user profiles, roles, and pointers to Qdrant results; Postgres is the enterprise relational data source for the SQL agent.
+- History & retention: store pointer-only history (Qdrant references + minimal metadata) in Supabase; default retention = 90 days; admin can purge earlier.
+- Security rules: never store API keys in source; load from `.env` via `config.py`; never run agent loops inside Streamlit render functions; show progress with `st.spinner`/`st.status` and put chat/agent state in `st.session_state`.
+- Files to add (suggested):
+  - `src/auth/supabase_auth.py`
+  - `src/agents/rag_agent.py`
+  - `src/agents/sql_agent.py`
+  - `src/agents/visualisation_agent.py`
+  - `src/agents/supervisor.py` (LangGraph adapter) 
+  - `src/agents/ingestion.py`
+  - `src/storage/history_store.py`
+  - `src/admin/admin_ui.py`
+- Testing & CI: add unit tests that mock Gemini, Qdrant, and Supabase; integration tests using local SQLite and a Qdrant test instance; run tests via `pytest` in CI.
+
+Please follow these guidelines when suggesting or generating code and scaffolding new files.

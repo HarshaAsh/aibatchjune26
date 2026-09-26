@@ -1,16 +1,17 @@
 import streamlit as st
+import plotly.io as pio
+
 from config import GeminiConfigError
-from gemini_client import create_gemini_model
+from gemini_client import create_langchain_gemini_model
 from rag_ingestion import (
     QdrantConfigError,
-    answer_with_rag_only,
     has_ingested_documents,
     ingest_sources_to_qdrant,
 )
 
 
-st.set_page_config(page_title="Gemini Chat", page_icon="chat")
-st.title("Gemini Chatbot")
+st.set_page_config(page_title="Enterprise Gemini Chat", page_icon="chat")
+st.title("Enterprise Gemini Chatbot")
 
 
 def is_valid_url(url: str) -> bool:
@@ -18,7 +19,8 @@ def is_valid_url(url: str) -> bool:
     return trimmed.startswith("http://") or trimmed.startswith("https://")
 
 try:
-    gemini_model = create_gemini_model()
+    create_langchain_gemini_model()
+    from src.agents.supervisor import invoke_enterprise_graph
 except GeminiConfigError as exc:
     st.error(str(exc))
     st.stop()
@@ -35,9 +37,12 @@ if "uploaded_pdfs" not in st.session_state:
 if "source_links" not in st.session_state:
     st.session_state.source_links = []
 
+if "agent_state" not in st.session_state:
+    st.session_state.agent_state = {}
+
 with st.sidebar:
     st.header("Knowledge Sources")
-    st.caption("Upload PDFs or add web links for future RAG integration.")
+    st.caption("Upload PDFs or add web links for enterprise retrieval and analysis.")
 
     uploaded_files = st.file_uploader(
         "Upload PDF files",
@@ -102,12 +107,14 @@ with st.sidebar:
                 )
             except (GeminiConfigError, QdrantConfigError, ValueError) as exc:
                 st.error(str(exc))
-            except Exception as exc:
+            except (ConnectionError, OSError, RuntimeError) as exc:
                 st.error(f"Ingestion failed: {exc}")
 
 for chat_message in st.session_state.messages:
     with st.chat_message(chat_message["role"]):
         st.markdown(chat_message["content"])
+        if chat_message.get("chart_json"):
+            st.plotly_chart(pio.from_json(chat_message["chart_json"]), use_container_width=True)
 
 if user_prompt := st.chat_input("Type your message"):
     st.session_state.messages.append({"role": "user", "content": user_prompt})
@@ -116,20 +123,42 @@ if user_prompt := st.chat_input("Type your message"):
         st.markdown(user_prompt)
 
     with st.chat_message("assistant"):
-        with st.spinner("Thinking..."):
+        with st.status("Running enterprise agent flow...", expanded=True) as status:
             try:
-                if has_ingested_documents():
-                    reply = answer_with_rag_only(user_prompt, gemini_model)
-                else:
-                    reply = (
-                        "No ingested documents found in Qdrant collection my-chat-documents. "
-                        "Please ingest PDFs or weblinks first.\n\n"
-                        "References:\n- None"
-                    )
-            except (GeminiConfigError, QdrantConfigError, ValueError) as exc:
-                reply = f"RAG error: {exc}\n\nReferences:\n- None"
-            except Exception as exc:
-                reply = f"RAG retrieval failed: {exc}\n\nReferences:\n- None"
-        st.markdown(reply)
+                graph_result = invoke_enterprise_graph(
+                    user_query=user_prompt,
+                    chat_history=st.session_state.messages,
+                )
+                st.session_state.agent_state = graph_result
 
-    st.session_state.messages.append({"role": "assistant", "content": reply})
+                decision = graph_result.get("routing_decision", {})
+                selected_routes = [
+                    route_name
+                    for route_name, enabled in {
+                        "sql": decision.get("needs_sql"),
+                        "rag": decision.get("needs_rag") and has_ingested_documents(),
+                        "news": decision.get("needs_news"),
+                        "viz": decision.get("needs_viz"),
+                    }.items()
+                    if enabled
+                ]
+                status.write(
+                    "Selected branches: "
+                    + (", ".join(selected_routes) if selected_routes else "direct response")
+                )
+                for event in graph_result.get("events", []):
+                    status.write(event)
+                reply = graph_result.get("final_response", "I could not generate a response.")
+                chart_json = graph_result.get("chart_json")
+                status.update(label="Enterprise flow completed", state="complete")
+            except (GeminiConfigError, QdrantConfigError, ValueError, ModuleNotFoundError, ConnectionError) as exc:
+                chart_json = None
+                reply = f"Agent flow error: {exc}"
+                status.update(label="Enterprise flow failed", state="error")
+        st.markdown(reply)
+        if chart_json:
+            st.plotly_chart(pio.from_json(chart_json), use_container_width=True)
+
+    st.session_state.messages.append(
+        {"role": "assistant", "content": reply, "chart_json": chart_json}
+    )

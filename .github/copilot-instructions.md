@@ -24,7 +24,10 @@
 ## SQL integration checks
 - Run the live SQL integration runner from the repository root with `python tests/sql_integration.py` after installing `requirements.txt` and configuring the required `.env` values.
 - Treat this as a live integration check: it calls OpenAI and the configured database, so do not run it as part of routine unit-test collection.
-- Its three-attempt retry loop is test-runner behaviour only. Production retries require a LangGraph conditional edge from SQL execution back to SQL generation.
+- Production SQL retries are wired in `src/graph.py`: after execution failure, route back to SQL generation while `retry_count < 3`. Because the count increments on failure from zero, this allows at most three executions total.
+- Include the previous execution error in the next SQL generation prompt. After retry exhaustion, preserve the SQL failure for response synthesis rather than silently dropping it.
+- `tests/sql_integration.py` separately exercises the SQL nodes directly with its own three-attempt loop. The end-to-end graph integration check is `python tests/test_graph.py`; it calls live services and should not run during routine unit-test collection.
+- Keep `app.py` documentation accurate: the current Streamlit page is an echo demo and does not invoke `src/graph.py`.
 
 ## RAG integration checks
 - Keep the embedding model used by `src/tools/rag.py` aligned with the dimensions of vectors stored in Supabase.
@@ -35,7 +38,9 @@
 ## SQL and visualisation agents
 - Keep SQL graph nodes focused: schema loading, query generation, and query execution remain separate responsibilities in `src/agents/sql_agent.py`.
 - SQL generation must remain read-only and use the supplied schema. Include the previous execution error when retrying. Increment retry state on execution failure; do not claim production retries exist unless a graph conditional edge routes back to generation.
-- Generate charts only from successful SQL result records. Return no chart when records are absent or the model indicates that a chart is not useful.
+- Treat the SQL prompt's read-only instruction as insufficient enforcement. Use a least-privilege database role with read-only permissions, or add and test a database-side read-only transaction guard before allowing production access.
+- Generate charts only from successful SQL result records. Return no chart when records or numeric measures are absent. If the user explicitly requests a chart and the model returns `NONE`, use the basic numeric-data fallback in `src/tools/viz.py`.
+- When a user requests a chart of financial data, route to both SQL and visualisation. The visualisation node depends on successful SQL records; after SQL retries are exhausted, continue to response synthesis without a chart.
 - Treat model-generated Python chart code as untrusted. Preserve validation, restricted scope and error handling in `src/tools/viz.py`; do not expand allowed calls or syntax without reviewing the execution risk.
 - Run the live chart integration check with `python tests/test_viz.py` only when the OpenAI API key and dependencies are configured. It calls OpenAI and should not be included in routine unit-test collection.
 

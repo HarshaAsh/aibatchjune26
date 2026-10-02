@@ -10,21 +10,61 @@ Start the Streamlit application from the repository root with:
 streamlit run app.py
 ```
 
-## SQL integration check
+## Agent workflow
 
-The live integration runner is in `tests/sql_integration.py`. Run it from the repository root after installing the dependencies and configuring `.env`:
+[src/graph.py](src/graph.py) compiles the production LangGraph workflow with in-memory checkpointing. The supervisor can start SQL, RAG, and news branches in parallel. These branches converge at response synthesis. Visualisation runs after SQL only when requested and when SQL execution reaches its success/terminal route.
+
+```mermaid
+flowchart TD
+	A[User question] --> B[supervisor]
+	B -->|needs_sql| C[schema]
+	B -->|needs_rag| D[rag_retrieve]
+	B -->|needs_news| E[news]
+	B -->|no retrieval branch| I[response]
+	C --> F[sql_generate]
+	F --> G[sql_execute]
+	G --> H{Execution failed and retry_count below 3?}
+	H -->|Yes| F
+	H -->|No, needs_viz| J{SQL succeeded with records?}
+	J -->|Yes| K[viz]
+	J -->|No| I
+	H -->|No visualisation requested| I
+	D --> L[rag_answer]
+	E --> I
+	K --> I
+	L --> I
+	I --> M[END]
+```
+
+### SQL agent flow and retries
+
+The SQL nodes are in [src/agents/sql_agent.py](src/agents/sql_agent.py), with connection and query helpers in [src/tools/database.py](src/tools/database.py). The schema node reads table columns from PostgreSQL `information_schema` and falls back to the documented schema if introspection returns no columns. The generation prompt asks OpenAI for a read-only PostgreSQL query and includes the previous execution error on each retry. The execution node stores the complete result and increments `retry_count` after a failure.
+
+Read-only behaviour is currently a prompt constraint, not a SQL parser or database transaction guarantee. Configure `DB_USER` as a least-privilege PostgreSQL role with read-only access to the required tables. Do not rely on model instructions alone to protect database writes.
+
+Production graph retries are implemented: after a failed execution, [src/graph.py](src/graph.py) routes back to `sql_generate` while `retry_count < 3`. Since the count increments on each failure and starts at zero, this permits at most three SQL executions total. On the final failure, the graph continues to response synthesis. The response node now reports the SQL failure context instead of silently omitting it. The graph does not retry supervisor, OpenAI, Supabase, or Serper failures through this SQL retry edge.
+
+The standalone SQL integration runner in [tests/sql_integration.py](tests/sql_integration.py) also has its own three-attempt loop and calls the SQL nodes directly. Run it from the repository root after installing dependencies and configuring `.env`:
 
 ```powershell
 python tests/sql_integration.py
 ```
 
-This runner sends a request to OpenAI and queries the configured PostgreSQL database. It makes up to three attempts, feeding each SQL execution error into the next generation prompt. Run it deliberately; it is not a routine unit test.
+This live check calls OpenAI and PostgreSQL; run it deliberately, not as routine unit-test collection.
 
-The retry loop currently exists only in this integration runner. Production retries will require a LangGraph conditional edge that routes failed SQL execution back to SQL generation while the retry limit has not been reached.
+### End-to-end graph check
 
-### SQL agent flow
+Run the manually guarded graph integration check from the repository root:
 
-The SQL nodes are in [src/agents/sql_agent.py](src/agents/sql_agent.py), with connection and query helpers in [src/tools/database.py](src/tools/database.py). The schema node reads table columns from PostgreSQL `information_schema` and falls back to the documented schema if introspection returns no columns. The generation node asks OpenAI for a read-only PostgreSQL query and includes the prior error on retries. The execution node stores the complete result and increments `retry_count` after a failure.
+```powershell
+python tests/test_graph.py
+```
+
+It invokes OpenAI, PostgreSQL, and whichever of Supabase or Serper the supervisor selects. It may also request chart generation. This is a live integration check and may incur API usage; it is not an offline unit test.
+
+The current [app.py](app.py) remains a password-gated Streamlit echo demo. It does not invoke the compiled graph yet.
+
+The graph returns `chart_json`; it does not render the chart itself. A future host UI must convert that Plotly JSON into an interactive visual. The response node now describes the chart as generated JSON rather than claiming it has already been rendered.
 
 ```mermaid
 flowchart TD
@@ -60,13 +100,13 @@ Run the live RAG integration check from the repository root with:
 python tests/test_rag.py
 ```
 
-This check calls OpenAI for embeddings and an answer, and calls the Supabase RPC for retrieval. It is a live integration check, not an offline unit test. It checks the retrieval and answer nodes directly; the current Streamlit chat page does not compile or invoke a complete production LangGraph workflow.
+This check calls OpenAI for embeddings and an answer, and calls the Supabase RPC for retrieval. It is a live integration check, not an offline unit test. It checks the retrieval and answer nodes directly.
 
 The RAG example follows the [Enterprise Chatbot article](https://www.harshaash.com/Python/Enterprise%20Chatbot%20Example/): retrieval embeds the question, fetches related chunks from Supabase, and passes those chunks to an answer node. The implementation in this repository keeps these steps in separate tool and agent modules.
 
 ## Visualisation agent
 
-[src/agents/viz_agent.py](src/agents/viz_agent.py) checks that the SQL result has a successful status and non-empty records. It passes those records and the original user question to [src/tools/viz.py](src/tools/viz.py). The helper gives OpenAI a short data sample and asks whether a chart is useful. `NONE`, missing data, invalid generated code, or a generation/execution error all result in `chart_json` being `None`. A valid Plotly figure is returned as JSON for the UI to render.
+[src/agents/viz_agent.py](src/agents/viz_agent.py) checks that the SQL result has a successful status and non-empty records. It passes those records and the original user question to [src/tools/viz.py](src/tools/viz.py). The helper gives OpenAI a short data sample and asks for a Plotly chart. If the user explicitly requested a visual and the model returns `NONE`, the helper creates a basic chart from available numeric data, including a single-record bar chart. Without an explicit chart request, or without numeric data, it returns `None`. Invalid generated code or a generation/execution error also returns `None`. A valid Plotly figure is returned as JSON for the UI to render.
 
 ```mermaid
 flowchart TD
@@ -75,7 +115,10 @@ flowchart TD
 	B -->|Yes| D[viz_node]
 	D --> E[Build DataFrame and send query, columns and sample to OpenAI]
 	E --> F{Model response}
-	F -->|NONE| C
+	F -->|NONE| J{Explicit chart request and numeric data?}
+	J -->|No| C
+	J -->|Yes| K[Create basic Plotly fallback chart]
+	K --> I
 	F -->|Plotly Python code| G[Strip Markdown and validate allowed syntax and calls]
 	G --> H{Validation and execution succeed?}
 	H -->|No| C

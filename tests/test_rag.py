@@ -32,7 +32,12 @@ def main() -> None:
     state = AgentState(
         user_query="What are the key risk factors disclosed by TCS in their year-end report?",
         chat_history=[],
-        routing_decision="",
+        routing_decision={
+            "needs_sql": False,
+            "needs_rag": False,
+            "needs_news": False,
+            "needs_viz": False,
+        },
         schema="",
         sql_query="",
         sql_result=None,

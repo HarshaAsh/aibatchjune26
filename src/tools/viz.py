@@ -14,7 +14,8 @@ from src.tools.database import client
 
 CHART_CODE_PROMPT = """You create Plotly charts from tabular data.
 Decide whether a chart is appropriate for the user's query and the supplied data.
-If a chart is not helpful or not requested, respond with only the word NONE.
+If the user explicitly asks for a chart, graph, plot, or visualisation and at least one numeric measure is available, you MUST create a chart, including when the data has only one row.
+If a chart is not requested or no numeric measure is available, respond with only the word NONE.
 Otherwise, respond only with Python code that builds a Plotly figure and assigns it to `fig`.
 The code must operate directly on the existing pandas DataFrame `df`, using only `px` or `go`.
 Do not import modules, call fig.show(), or include Markdown fences or explanations.
@@ -54,6 +55,71 @@ _ALLOWED_CALLS = {
         "update_xaxes", "update_yaxes",
     },
 }
+
+
+def _fallback_chart(df: pd.DataFrame, query: str) -> str | None:
+    """Build a basic chart when one was explicitly requested but the model declined."""
+    chart_requested = re.search(
+        r"\b(chart|graph|plot|visuali[sz](?:e|ation|ing))\b",
+        query,
+        flags=re.IGNORECASE,
+    )
+    if not chart_requested:
+        return None
+
+    numeric_columns = df.select_dtypes(include="number").columns.tolist()
+    if not numeric_columns:
+        return None
+
+    query_terms = re.sub(r"[^a-z0-9]+", " ", query.lower()).split()
+    axis_terms = {"year", "date", "quarter", "period", "id", "index"}
+    candidates = [
+        column
+        for column in numeric_columns
+        if not (
+            set(re.sub(r"[^a-z0-9]+", " ", str(column).lower()).split())
+            & axis_terms
+        )
+    ] or numeric_columns
+    measures = [
+        column
+        for column in candidates
+        if set(re.sub(r"[^a-z0-9]+", " ", str(column).lower()).split())
+        & set(query_terms)
+    ]
+    if not measures:
+        measures = candidates[:1]
+
+    if len(df) == 1:
+        measure = measures[0]
+        chart_data = pd.DataFrame(
+            {
+                "Metric": [str(measure).replace("_", " ").title()],
+                "Value": [df.iloc[0][measure]],
+            }
+        )
+        figure = px.bar(
+            chart_data,
+            x="Metric",
+            y="Value",
+            title=f"{str(measure).replace('_', ' ').title()}",
+        )
+    else:
+        dimensions = [column for column in df.columns if column not in measures]
+        chart_frame = df.copy()
+        if dimensions:
+            x_column = dimensions[0]
+        else:
+            x_column = "Record"
+            chart_frame[x_column] = range(1, len(chart_frame) + 1)
+        figure = px.line(
+            chart_frame,
+            x=x_column,
+            y=measures,
+            markers=True,
+            title="Financial metric trend",
+        )
+    return figure.to_json()
 
 
 def _validate_chart_code(code: str) -> None:
@@ -137,8 +203,15 @@ def generate_and_run_chart_code(query: str, records: list[dict]) -> str | None:
         generated_code = generated_code.replace("`", "").strip()
 
         if generated_code.upper() == "NONE":
-            print("Chart generation skipped: the model returned NONE.")
-            return None
+            fallback = _fallback_chart(df, query)
+            if fallback:
+                print(
+                    "The model returned NONE despite an explicit chart request; "
+                    "created a basic chart from the available numeric data."
+                )
+            else:
+                print("Chart generation skipped: the model returned NONE.")
+            return fallback
         if not generated_code:
             print("Chart generation failed: the model returned an empty response.")
             return None

@@ -8,7 +8,7 @@ class AgentState(TypedDict):
 
     user_query: str
     chat_history: list[dict[str, str]]
-    routing_decision: str
+    routing_decision: dict[str, bool]
     schema: str
     sql_query: str
     sql_result: Any

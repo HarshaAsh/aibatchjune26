@@ -14,7 +14,12 @@ def main() -> None:
     state = AgentState(
         user_query="What are the recent news and market updates for TCS?",
         chat_history=[],
-        routing_decision="",
+        routing_decision={
+            "needs_sql": False,
+            "needs_rag": False,
+            "needs_news": False,
+            "needs_viz": False,
+        },
         schema="",
         sql_query="",
         sql_result=None,

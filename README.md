@@ -10,6 +10,14 @@ Start the Streamlit application from the repository root with:
 streamlit run app.py
 ```
 
+## Daily financial data updates
+
+The GitHub Actions workflow at [.github/workflows/daily-financial-data.yml](.github/workflows/daily-financial-data.yml) runs every day at 19:30 India Standard Time (14:00 UTC). GitHub schedules can start a run a little later during busy periods. It can also be started manually from the Actions tab.
+
+Add these repository Actions secrets before enabling the workflow: `DB_USER`, `DB_HOST`, `DB_PORT`, `DB_NAME`, and `DB_PASSWORD`. Use a dedicated database role that can select from `companies` and `stock_prices`, insert and update the three financial tables, and use their ID sequences if they use `BIGSERIAL`. The job reads company tickers from PostgreSQL, fetches recent prices and the latest annual and quarterly statements from Yahoo Finance, and upserts records using the tables' unique keys. Invalid or non-finite numeric values are omitted, so they cannot overwrite existing values with nulls. Prices are fetched with a seven-day overlap to pick up recent gaps; financial statement refreshes follow the periods Yahoo Finance currently publishes.
+
+The ingestion job introspects the live tables before querying and supports both the app schema (`companies.ticker`, `stock_prices.price_date`) and the notebook schema (`companies.symbol`, `stock_prices.trade_date`, and quarterly `quarter_end`). It maps financial column variants such as `operating_income` to `operating_profit`, and uses the tables' declared unique keys for upserts. Yahoo Finance is an external data source and may omit, revise, or delay values.
+
 ## Agent workflow
 
 [src/graph.py](src/graph.py) compiles the production LangGraph workflow with in-memory checkpointing. The supervisor can start SQL, RAG, and news branches in parallel. These branches converge at response synthesis. Visualisation runs after SQL only when requested and when SQL execution reaches its success/terminal route.

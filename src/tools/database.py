@@ -12,6 +12,7 @@ from openai import OpenAI
 from supabase import Client, create_client
 
 from src.config import load_config
+from src.tools.guardrails import validate_sql_query
 
 
 _config = load_config()
@@ -110,23 +111,32 @@ def clean_sql_query(raw_query: str) -> str:
 
 def run_sql(sql: str) -> dict[str, Any]:
     """Execute SQL and return its rows, column names, and execution status."""
-    raw_query = sql
+    cleaned_sql = clean_sql_query(sql)
+    is_valid, error_msg = validate_sql_query(cleaned_sql)
+    if not is_valid:
+        return {
+            "status": "error",
+            "error": f"Guardrail Violation: {error_msg}",
+            "query": cleaned_sql,
+        }
+
     try:
         with engine.begin() as connection:
-            result = connection.execute(text(sql))
+            connection.execute(text("SET TRANSACTION READ ONLY"))
+            result = connection.execute(text(cleaned_sql))
             columns = list(result.keys())
             data = [dict(row) for row in result.mappings().all()]
         return {
             "status": "success",
             "data": data,
             "columns": columns,
-            "raw_query": raw_query,
+            "raw_query": cleaned_sql,
         }
     except SQLAlchemyError as exc:
         return {
             "status": "error",
             "data": [],
             "columns": [],
-            "raw_query": raw_query,
+            "raw_query": cleaned_sql,
             "error": str(exc),
         }

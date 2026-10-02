@@ -52,9 +52,12 @@ def schema_node(state: AgentState) -> dict[str, str]:
 def sql_generate(state: AgentState) -> dict[str, str]:
     """Generate a read-only PostgreSQL query for the user's question."""
     prompt = (
-        "Write one read-only PostgreSQL SELECT query that answers the user's "
-        "question. Use only the tables and columns in the supplied schema. "
-        "Return only the SQL query, without Markdown or explanation.\n\n"
+        "You are strictly restricted to read-only queries (SELECT statements only). "
+        "Never generate INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE, or "
+        "schema-altering commands. Do not chain multiple queries with semicolons. "
+        "Write one PostgreSQL SELECT query that answers the user's question. "
+        "Use only tables and columns in the supplied schema. Return only the SQL "
+        "query, without Markdown or explanation.\n\n"
         f"Database schema:\n{state.get('schema', DATABASE_SCHEMA)}\n\n"
         f"User question:\n{state.get('user_query', '')}"
     )
@@ -83,7 +86,8 @@ def sql_generate(state: AgentState) -> dict[str, str]:
 
 def sql_execute(state: AgentState) -> dict[str, Any]:
     """Run the generated SQL and update retry state when execution fails."""
-    raw_result = run_sql(state.get("sql_query", ""))
+    sql_query = state.get("sql_query", "")
+    raw_result = run_sql(sql_query)
     succeeded = raw_result.get("status") == "success"
     update: dict[str, Any] = {
         "sql_result": raw_result,

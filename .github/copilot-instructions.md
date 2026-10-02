@@ -26,6 +26,12 @@
 - Treat this as a live integration check: it calls OpenAI and the configured database, so do not run it as part of routine unit-test collection.
 - Its three-attempt retry loop is test-runner behaviour only. Production retries require a LangGraph conditional edge from SQL execution back to SQL generation.
 
+## RAG integration checks
+- Keep the embedding model used by `src/tools/rag.py` aligned with the dimensions of vectors stored in Supabase.
+- Match the `match_documents` RPC arguments to its deployed SQL signature. The current function call sends `query_embedding` and `match_count`; do not add arguments such as `match_threshold` unless the RPC defines them.
+- Keep RAG answers grounded in retrieved context. When the context does not support an answer, say so rather than filling gaps with outside knowledge.
+- Run the live RAG integration check from the repository root with `python tests/test_rag.py` only when an OpenAI API key and Supabase access are configured. It makes external API and database calls and should not run during routine unit-test collection.
+
 ## Writing style for all generated text, documentation, and UI strings
 - Use clear, direct, human-like language. Avoid complex phrasing and unnecessary formality.
 - Write in the active voice and keep sentences natural, plain, and easy to read.

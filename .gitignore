@@ -2,4 +2,5 @@
 .env.*
 !.env.example
 agent-errors.log
-src/__pycache__/config.cpython-313.pyc
+**/__pycache__/
+*.py[cod]

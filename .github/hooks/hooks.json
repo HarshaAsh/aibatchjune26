@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "bash": "node .github/hooks/validate-sql-format.cjs",
+        "powershell": "node .github/hooks/validate-sql-format.cjs",
+        "timeout": 60
+      }
+    ],
+    "errorOccurred": [
+      {
+        "type": "command",
+        "bash": "node .github/hooks/log-agent-error.cjs",
+        "powershell": "node .github/hooks/log-agent-error.cjs",
+        "timeout": 10
+      }
+    ]
+  }
+}

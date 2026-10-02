@@ -1,141 +1,43 @@
-# GitHub Copilot Instructions for Multi-Agent Streamlit AI App
+# Copilot instructions
 
-## Project Overview
-This project is a multi-agent system built using Streamlit, Gemini (via `@google/genai` or `langchain-google-genai`), and LangChain (preferably LangGraph for orchestration). 
+## Python style
+- Write modular Python code with clear boundaries between UI, configuration, integrations, business logic, and persistence.
+- Add type hints to functions, methods, parameters, and return values. Use typed data structures for shared state and configuration.
+- Follow PEP 8; use descriptive names, focused functions, and consistent formatting.
+- Handle errors explicitly and provide useful, non-sensitive diagnostics. Avoid broad exception handling unless the error is re-raised or handled deliberately.
 
-<!-- The application coordinates three specialized agents:
-1. **SQL Agent:** Handles relational database queries using `langchain-community` SQL database tools.
-2. **RAG Agent:** Handles document-based context retrieval using vector search (e.g., ChromaDB or FAISS).
-3. **Serper Agent:** Handles real-time web search capabilities via Serper API (`GoogleSerperAPIWrapper`). -->
+## Security and configuration
+- Never hardcode API keys, passwords, tokens, or other secrets in source code, tests, examples, or documentation.
+- Read credentials and environment-specific settings from environment variables or the approved secrets store. Use `python-dotenv` only to load local development configuration.
+- Keep `.env` out of version control; use a sanitized `.env.example` with placeholder values when documenting required settings.
+- Do not log secrets, access tokens, or sensitive user data.
 
-## Code Style & Language Preferences
-- Use **Python 3.11+** with strict type annotations (`typing.Dict`, `typing.List`, `typing.Optional`, etc.).
-- Follow **PEP 8** style guidelines.
-- Use **British English** for documentation and code comments (e.g., `organise`, `colour`, `centre`).
-- Keep code concise, explicit, and modular. Avoid unnecessary helper abstractions.
-- Prefer explicit exception handling using standard Python errors (`ValueError`, `ConnectionError`).
+## LangGraph agent design
+- Keep each graph node small and focused on one responsibility; place related node implementations and graph construction in clearly named modules.
+- Define graph state explicitly with a typed structure, and make node inputs and returned state updates clear and predictable.
+- Keep routing decisions in dedicated, readable conditional-edge functions rather than mixing routing with unrelated side effects.
+- Give nodes descriptive names, define graph edges explicitly, and make termination paths clear.
+- Isolate external calls (LLMs, databases, search, and vector stores) behind focused helpers or clients. Avoid duplicating integrations across nodes.
+- Make side effects, retries, and failure handling explicit; keep node behaviour easy to test in isolation.
+- Add or update tests when changing node behaviour, state fields, routing, or graph topology.
 
-## Architectural Principles & Rules
-
-### 1. Streamlit UI Rules
-- Do **not** run agent execution loops directly in main UI render calls.
-- Wrap agent state and chat history in `st.session_state`.
-- Use `st.status` or `st.spinner` to show real-time agent thought processes and tool execution steps.
-- Clean up intermediate agent step logs before rendering the final response using `st.chat_message`.
-- Ensure session state keys are explicitly initialised before use.
-
-<!-- ### 2. Multi-Agent Orchestration (LangChain / LangGraph)
-- Use **LangGraph** `StateGraph` for multi-agent state routing instead of legacy `AgentExecutor` chains.
-- Pass a single, unified `TypedDict` schema for the graph state.
-- Define a **Supervisor/Router Agent** to route incoming user queries to the correct domain agent (`sql_agent`, `rag_agent`, `search_agent`, or `direct_response`).
-- Each sub-agent must return structured outputs that update the shared state.
-- Use system prompts that clearly state agent boundaries to prevent agent loop traps. -->
-
-### 3. Model Configuration (Gemini)
-- Use `ChatGoogleGenerativeAI` from `langchain-google-genai`.
-- Default to `gemini-3.1-flash-lite` for reasoning/routing tasks and `gemini-3.1-flash-lite` for fast factual queries or summary generation.
-- Ensure `google_api_key` is securely loaded via `.env` file and **never** hardcoded in the source code.
-
-<!-- ### 4. Tool & Integration Standards
-- **SQL Agent:**
-  - Wrap database connection in `SQLDatabase` from `langchain_community.utilities`.
-  - Always set limits on returned rows (e.g., `TOP 10` or `LIMIT 10`) to avoid token window overflow.
-  - Read-only execution: Do not allow `INSERT`, `UPDATE`, `DROP`, or `DELETE` statements.
-- **RAG Agent:**
-  - Use `RecursiveCharacterTextSplitter` for chunking.
-  - Return context sources alongside generated answers.
-- **Serper Agent:**
-  - Instantiate `GoogleSerperAPIWrapper` securely using `SERPER_API_KEY`.
-  - Format search results clearly with title, snippet, and source links. -->
-
-## Recommended Folder Structure
-When suggesting file changes or creating new files, stick to this layout:
-
-text
-├── .github/
-│   └── copilot-instructions.md
-├── .env
-<!-- ├── src/
-│   ├── agents/
-│   │   ├── __init__.py
-│   │   ├── router.py
-│   │   ├── sql_agent.py
-│   │   ├── rag_agent.py
-│   │   └── search_agent.py
-│   ├── tools/
-│   │   ├── __init__.py
-│   │   ├── db_tools.py
-│   │   ├── vector_tools.py
-│   │   └── serper_tools.py
-│   ├── state.py
-│   └── graph.py -->
-├── app.py
-├── requirements.txt
-└── README.md
-
-## Common Code Patterns to Apply
-
-### Streamlit Session State Initialisation Pattern
-
-python
-import streamlit as st
-
-def init_session():
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-    if "agent_state" not in st.session_state:
-        st.session_state.agent_state = {}
-
-### Gemini LangChain Instantiation Pattern
-
-python
-from langchain_google_genai import ChatGoogleGenerativeAI
-import os
-
-def get_gemini_model(model_name: str = "gemini-1.5-pro") -> ChatGoogleGenerativeAI:
-    return ChatGoogleGenerativeAI(
-        model=model_name,
-        google_api_key=os.getenv("GOOGLE_API_KEY"),
-        temperature=0.2,
-    )
-
-## Safety & Security
-
-* Never expose environment variables or secret keys in Streamlit UI logs or code output.
-* Always sanitize SQL queries before execution to avoid injection risks.
-* Handle API failures gracefully using fallback responses for end users.
-
-
-## What has been built so far
-- A Streamlit application with gemini integration
-- Deployed in streamlit
-
-## What needs to be built
-- Multi-agent orchestration using LangGraph
-- Login and authentication for users
-- Do not build agentic flow unless mentioned in the prompt. Only build agentic flow if the prompt explicitly asks for it.
-
-## Latest Plan (summary)
-Added on 2026-08-14: core architectural decisions and next-work items to guide Copilot and contributors.
-
-- Orchestration: use LangGraph / StateGraph as the primary supervisor orchestration framework. Implement a `Supervisor` that routes queries to `sql_agent`, `rag_agent`, or both, asks clarifying questions, and enforces a max iteration limit (default 2).
-- Agents:
-  - `rag_agent`: use Qdrant for vector retrieval and Gemini for answer synthesis; always include references and refuse to hallucinate beyond context.
-  - `sql_agent`: Postgres primary via SQLAlchemy for read-only reporting queries; sanitise SQL, disallow DML/DDL, and enforce a default `LIMIT` (50).
-  - `visualisation_agent`: produce Plotly interactive charts and PNG thumbnails for Streamlit UI.
-- Auth & Admin: use Supabase for authentication, roles, and minimal metadata; embed an admin panel inside the Streamlit app for DB/config management, ingestion control, and retention/purge operations.
-- Data stores: Qdrant remains the primary vector DB; Supabase stores user profiles, roles, and pointers to Qdrant results; Postgres is the enterprise relational data source for the SQL agent.
-- History & retention: store pointer-only history (Qdrant references + minimal metadata) in Supabase; default retention = 90 days; admin can purge earlier.
-- Security rules: never store API keys in source; load from `.env` via `config.py`; never run agent loops inside Streamlit render functions; show progress with `st.spinner`/`st.status` and put chat/agent state in `st.session_state`.
-- Files to add (suggested):
-  - `src/auth/supabase_auth.py`
-  - `src/agents/rag_agent.py`
-  - `src/agents/sql_agent.py`
-  - `src/agents/visualisation_agent.py`
-  - `src/agents/supervisor.py` (LangGraph adapter) 
-  - `src/agents/ingestion.py`
-  - `src/storage/history_store.py`
-  - `src/admin/admin_ui.py`
-- Testing & CI: add unit tests that mock Gemini, Qdrant, and Supabase; integration tests using local SQLite and a Qdrant test instance; run tests via `pytest` in CI.
-
-Please follow these guidelines when suggesting or generating code and scaffolding new files.
+## Writing style for all generated text, documentation, and UI strings
+- Use clear, direct, human-like language. Avoid complex phrasing and unnecessary formality.
+- Write in the active voice and keep sentences natural, plain, and easy to read.
+- Aim for a Flesch reading score between 60 and 70 for user-facing writing.
+- Prefer simple wording over buzzwords or AI-style filler. Use plain English unless technical terms are required.
+- Keep a calm, confident, professional tone. Do not sound salesy, overly excited, or promotional.
+- Use British English conventions throughout. Prefer spellings such as colour, organise, centre, optimise, behaviour, and specialise.
+- Adapt to Indian English usage where natural, while keeping a professional and respectful tone.
+- Use polite, slightly formal language that reads as credible and human.
+- Vary sentence length and rhythm. Avoid repetitive openings and filler phrases.
+- Use contractions where they sound natural, such as "don't", "it's", and "we've".
+- Keep punctuation restrained. Prefer periods and commas. Avoid excessive em dashes and semicolons.
+- Avoid adverbs, especially filler adverbs such as "very", "really", "clearly", and "simply" unless they add meaning.
+- Avoid American idioms, slang, and casual phrases that sound out of place in a professional setting.
+- Do not use emoticons, emojis, or checkmarks in generated text or UI strings.
+- Avoid excessive punctuation that makes the copy feel noisy or forced.
+- Use occasional examples or relatable references when they help explain a point without sounding scripted.
+- Keep the writing practical, useful, and grounded in real-world business and product context.
+- When writing product text or UI copy, choose clarity and trust over hype, cleverness, or trend-driven language.
+- Do not write in a way that feels generated by AI. Write like a careful professional who understands the subject and speaks plainly.

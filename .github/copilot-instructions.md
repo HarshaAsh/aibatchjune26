@@ -21,6 +21,11 @@
 - Make side effects, retries, and failure handling explicit; keep node behaviour easy to test in isolation.
 - Add or update tests when changing node behaviour, state fields, routing, or graph topology.
 
+## SQL integration checks
+- Run the live SQL integration runner from the repository root with `python tests/sql_integration.py` after installing `requirements.txt` and configuring the required `.env` values.
+- Treat this as a live integration check: it calls OpenAI and the configured database, so do not run it as part of routine unit-test collection.
+- Its three-attempt retry loop is test-runner behaviour only. Production retries require a LangGraph conditional edge from SQL execution back to SQL generation.
+
 ## Writing style for all generated text, documentation, and UI strings
 - Use clear, direct, human-like language. Avoid complex phrasing and unnecessary formality.
 - Write in the active voice and keep sentences natural, plain, and easy to read.

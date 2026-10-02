@@ -68,23 +68,7 @@ It invokes OpenAI, PostgreSQL, and whichever of Supabase or Serper the superviso
 
 The password-gated [app.py](app.py) invokes the compiled graph and renders returned Plotly JSON as an interactive chart. Each Streamlit session keeps its own LangGraph `thread_id`; clearing the chat starts a fresh thread.
 
-```mermaid
-flowchart TD
-	A[Question] --> B[schema_node]
-	B --> C{Live schema available?}
-	C -->|Yes| D[Store live schema]
-	C -->|No| E[Use documented fallback schema]
-	D --> F[sql_generate]
-	E --> F
-	F --> G[Generate read-only SQL]
-	G --> H[sql_execute]
-	H --> I{SQL succeeded?}
-	I -->|Yes| J[Store result, columns and status]
-	I -->|No| K[Store error and increment retry_count]
-	K -. Test runner retries up to 3 attempts .-> F
-```
-
-The dotted retry path above is implemented by `tests/sql_integration.py`, not by a compiled production LangGraph graph. The SQL nodes are callable independently; automatic production routing between them is not set up yet.
+For an in-app explanation of the system, use the **Project overview** button above Chat controls in the Streamlit sidebar. It describes the project, agents, graph flow, security controls, setup and integration checks. The overview includes Mermaid diagrams and links to the [reference article](https://www.harshaash.com/Python/Enterprise%20Chatbot%20Example/).
 
 ## Retrieval-augmented generation
 
@@ -109,6 +93,8 @@ The RAG example follows the [Enterprise Chatbot article](https://www.harshaash.c
 ## Visualisation agent
 
 [src/agents/viz_agent.py](src/agents/viz_agent.py) checks that the SQL result has a successful status and non-empty records. It passes those records and the original user question to [src/tools/viz.py](src/tools/viz.py). The helper gives OpenAI a short data sample and asks for a Plotly chart. If the user explicitly requested a visual and the model returns `NONE`, the helper creates a basic chart from available numeric data, including a single-record bar chart. Without an explicit chart request, or without numeric data, it returns `None`. Invalid generated code or a generation/execution error also returns `None`. A valid Plotly figure is returned as JSON for the UI to render.
+
+This is one visualisation branch with a graph node and a helper, not a separate multi-agent graph: `viz_node()` validates SQL output and delegates to `generate_and_run_chart_code()`. The helper returns Plotly JSON; [app.py](app.py) renders it. The generated-code allowlist reduces the available operations but is not a general-purpose sandbox.
 
 ```mermaid
 flowchart TD

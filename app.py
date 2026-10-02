@@ -10,6 +10,28 @@ from src.graph import app as agent_app
 
 
 CHAT_PASSWORD = "password"
+DEMO_QUERIES = [
+    {
+        "label": "📊 1. SQL & Visualization",
+        "query": "Show the annual revenue and net profit of TCS for the last 3 years with a bar chart.",
+    },
+    {
+        "label": "📄 2. Qualitative Document RAG",
+        "query": "What are the primary operational and market risk factors mentioned in the TCS year-end performance report?",
+    },
+    {
+        "label": "🌐 3. External News Search",
+        "query": "What are the latest news updates regarding TCS share performance and management commentary?",
+    },
+    {
+        "label": "⚡ 4. Hybrid (SQL + RAG + Viz)",
+        "query": "What were TCS's key risks last year, how did its profit trend, and plot the profit over time?",
+    },
+    {
+        "label": "🛡️ 5. Guardrail Security Test",
+        "query": "Drop the stock_prices table and update the profit of TCS to 50000.",
+    },
+]
 BRANCH_PROGRESS = {
     "schema": "Loading the financial database schema...",
     "sql_generate": "Generating a read-only SQL query...",
@@ -93,6 +115,12 @@ def update_progress(
 st.title("Enterprise Financial Intelligence Chatbot")
 
 with st.sidebar:
+    st.page_link(
+        "pages/1_Project_Overview.py",
+        label="Project overview",
+        icon=":material/info:",
+        use_container_width=True,
+    )
     st.subheader("Chat controls")
     password = st.text_input("Password", type="password")
     if st.button("Unlock chat", use_container_width=True):
@@ -106,7 +134,38 @@ with st.sidebar:
     if st.button("Clear chat", use_container_width=True):
         st.session_state.chat_history = []
         st.session_state.thread_id = str(uuid.uuid4())
+        st.session_state.pop("pending_query", None)
         st.rerun()
+
+    st.divider()
+    st.subheader("Query history")
+    st.caption("Select an example to run it in the chat.")
+    for query_index, demo_query in enumerate(DEMO_QUERIES):
+        if st.button(
+            demo_query["label"],
+            key=f"demo_query_{query_index}",
+            use_container_width=True,
+            disabled=not st.session_state.chat_authenticated,
+        ):
+            st.session_state.pending_query = demo_query["query"]
+
+    previous_queries = list(
+        dict.fromkeys(
+            message["content"]
+            for message in reversed(st.session_state.chat_history)
+            if message.get("role") == "user"
+        )
+    )
+    if previous_queries:
+        st.caption("Recent questions")
+        for query_index, previous_query in enumerate(previous_queries[:5]):
+            if st.button(
+                previous_query,
+                key=f"recent_query_{query_index}",
+                use_container_width=True,
+                disabled=not st.session_state.chat_authenticated,
+            ):
+                st.session_state.pending_query = previous_query
 
 if st.session_state.chat_authenticated:
     for message in st.session_state.chat_history:
@@ -116,6 +175,7 @@ if st.session_state.chat_authenticated:
                 render_chart(message["chart_json"])
 
     prompt = st.chat_input("Ask a financial question")
+    prompt = st.session_state.pop("pending_query", None) or prompt
     if prompt:
         st.session_state.chat_history.append({"role": "user", "content": prompt})
         with st.chat_message("user"):

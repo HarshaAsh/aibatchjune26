@@ -27,7 +27,7 @@
 - Production SQL retries are wired in `src/graph.py`: after execution failure, route back to SQL generation while `retry_count < 3`. Because the count increments on failure from zero, this allows at most three executions total.
 - Include the previous execution error in the next SQL generation prompt. After retry exhaustion, preserve the SQL failure for response synthesis rather than silently dropping it.
 - `tests/sql_integration.py` separately exercises the SQL nodes directly with its own three-attempt loop. The end-to-end graph integration check is `python tests/test_graph.py`; it calls live services and should not run during routine unit-test collection.
-- Keep `app.py` documentation accurate: the current Streamlit page is an echo demo and does not invoke `src/graph.py`.
+- Keep `app.py` documentation accurate: the Streamlit chat invokes `src/graph.py`, keeps a session-scoped `thread_id`, and renders chart JSON returned by the graph.
 
 ## RAG integration checks
 - Keep the embedding model used by `src/tools/rag.py` aligned with the dimensions of vectors stored in Supabase.

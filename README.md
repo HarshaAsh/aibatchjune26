@@ -66,9 +66,7 @@ python tests/test_graph.py
 
 It invokes OpenAI, PostgreSQL, and whichever of Supabase or Serper the supervisor selects. It may also request chart generation. This is a live integration check and may incur API usage; it is not an offline unit test.
 
-The current [app.py](app.py) remains a password-gated Streamlit echo demo. It does not invoke the compiled graph yet.
-
-The graph returns `chart_json`; it does not render the chart itself. A future host UI must convert that Plotly JSON into an interactive visual. The response node now describes the chart as generated JSON rather than claiming it has already been rendered.
+The password-gated [app.py](app.py) invokes the compiled graph and renders returned Plotly JSON as an interactive chart. Each Streamlit session keeps its own LangGraph `thread_id`; clearing the chat starts a fresh thread.
 
 ```mermaid
 flowchart TD

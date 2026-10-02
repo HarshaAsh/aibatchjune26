@@ -32,6 +32,12 @@
 - Keep RAG answers grounded in retrieved context. When the context does not support an answer, say so rather than filling gaps with outside knowledge.
 - Run the live RAG integration check from the repository root with `python tests/test_rag.py` only when an OpenAI API key and Supabase access are configured. It makes external API and database calls and should not run during routine unit-test collection.
 
+## External news search
+- Read the Serper credential through `load_config().serper_api_key`; do not read or log `SERPER_API_KEY` directly in agent code.
+- Keep Serper HTTP calls in `src/tools/search.py` and graph-node behaviour in `src/agents/news_agent.py`. The news node stores JSON results in `external_context`, capped at 5,000 characters, and should allow the workflow to continue with an empty context when search fails.
+- Treat Serper results as time-sensitive external evidence. Preserve source and date details where available, and do not present search snippets as verified facts without qualification.
+- Run the live Serper integration check from the repository root with `python tests/test_news.py` only when `SERPER_API_KEY` and network access are configured. It makes an external API call and should not run during routine unit-test collection.
+
 ## Writing style for all generated text, documentation, and UI strings
 - Use clear, direct, human-like language. Avoid complex phrasing and unnecessary formality.
 - Write in the active voice and keep sentences natural, plain, and easy to read.

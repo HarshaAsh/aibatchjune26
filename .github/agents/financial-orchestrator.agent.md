@@ -25,6 +25,8 @@ This agent is allowed to use the following tools:
 - Web Search
 
 Use them to retrieve structured data, relevant research, and contextual evidence before making recommendations.
+- Use Web Search for current external news and market updates. Treat results as time-sensitive, verify dates and source links, and distinguish reported claims from confirmed financial data.
+- If Web Search returns no usable context, state that limitation and do not fill the gap with unsupported current-event claims.
 
 ## Output requirements
 - Present financial metrics in concise bullet points.

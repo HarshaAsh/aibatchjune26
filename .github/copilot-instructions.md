@@ -32,6 +32,13 @@
 - Keep RAG answers grounded in retrieved context. When the context does not support an answer, say so rather than filling gaps with outside knowledge.
 - Run the live RAG integration check from the repository root with `python tests/test_rag.py` only when an OpenAI API key and Supabase access are configured. It makes external API and database calls and should not run during routine unit-test collection.
 
+## SQL and visualisation agents
+- Keep SQL graph nodes focused: schema loading, query generation, and query execution remain separate responsibilities in `src/agents/sql_agent.py`.
+- SQL generation must remain read-only and use the supplied schema. Include the previous execution error when retrying. Increment retry state on execution failure; do not claim production retries exist unless a graph conditional edge routes back to generation.
+- Generate charts only from successful SQL result records. Return no chart when records are absent or the model indicates that a chart is not useful.
+- Treat model-generated Python chart code as untrusted. Preserve validation, restricted scope and error handling in `src/tools/viz.py`; do not expand allowed calls or syntax without reviewing the execution risk.
+- Run the live chart integration check with `python tests/test_viz.py` only when the OpenAI API key and dependencies are configured. It calls OpenAI and should not be included in routine unit-test collection.
+
 ## External news search
 - Read the Serper credential through `load_config().serper_api_key`; do not read or log `SERPER_API_KEY` directly in agent code.
 - Keep Serper HTTP calls in `src/tools/search.py` and graph-node behaviour in `src/agents/news_agent.py`. The news node stores JSON results in `external_context`, capped at 5,000 characters, and should allow the workflow to continue with an empty context when search fails.

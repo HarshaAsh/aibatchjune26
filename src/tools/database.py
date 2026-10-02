@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy import URL, create_engine, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
+from openai import OpenAI
 from supabase import Client, create_client
 
 from src.config import load_config
@@ -25,6 +26,7 @@ engine: Engine = create_engine(
         database=_config.db_name,
     )
 )
+client = OpenAI(api_key=_config.openai_api_key)
 supabase: Client = create_client(_config.supabase_url, _config.supabase_key)
 
 DATABASE_SCHEMA = """

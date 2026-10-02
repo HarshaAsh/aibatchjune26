@@ -15,14 +15,15 @@ st.set_page_config(
 
 
 def render_mermaid(diagram: str, height: int = 440) -> None:
-    """Render a Mermaid diagram in an isolated component frame."""
+    """Render Mermaid and report CDN or diagram syntax failures in the page."""
     safe_diagram = html.escape(diagram)
     components.html(
         f"""
         <div id="diagram-wrap">
           <pre class="mermaid">{safe_diagram}</pre>
           <div id="diagram-error" hidden>
-            Diagram rendering needs access to the Mermaid library CDN.
+            <strong>Diagram unavailable.</strong>
+            <span id="diagram-error-detail"></span>
           </div>
         </div>
         <style>
@@ -30,20 +31,34 @@ def render_mermaid(diagram: str, height: int = 440) -> None:
           #diagram-wrap {{ overflow-x: auto; padding: 0.5rem; }}
           .mermaid {{ background: transparent; text-align: center; }}
           #diagram-error {{ color: #8b1e1e; padding: 1rem; }}
+          #diagram-error-detail {{ display: block; margin-top: 0.35rem; }}
         </style>
-        <script type="module">
-          import mermaid from
-            'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
-          mermaid.initialize({{
-            startOnLoad: false,
-            theme: 'neutral',
-            securityLevel: 'strict'
-          }});
-          try {{
-            await mermaid.run({{ querySelector: '.mermaid' }});
-          }} catch (error) {{
-            document.querySelector('#diagram-error').hidden = false;
-            console.error('Mermaid rendering failed', error);
+        <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+        <script>
+          const errorBox = document.querySelector('#diagram-error');
+          const errorDetail = document.querySelector('#diagram-error-detail');
+          const showError = (message) => {{
+            errorDetail.textContent = message;
+            errorBox.hidden = false;
+          }};
+          if (!window.mermaid) {{
+            showError('Could not load Mermaid from its CDN. Check network access.');
+          }} else {{
+            window.mermaid.initialize({{
+              startOnLoad: false,
+              theme: 'neutral',
+                            securityLevel: 'strict',
+                            flowchart: {{
+                                curve: 'linear',
+                                htmlLabels: false,
+                                nodeSpacing: 35,
+                                rankSpacing: 45
+                            }}
+            }});
+            window.mermaid.run({{ querySelector: '.mermaid' }}).catch((error) => {{
+              showError(`Mermaid syntax/rendering error: ${{error.message || error}}`);
+              console.error('Mermaid rendering failed', error);
+            }});
           }}
         </script>
         """,

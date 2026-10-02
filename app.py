@@ -112,151 +112,170 @@ def update_progress(
         )
     status.update(label=label, state="running")
 
-st.title("Enterprise Financial Intelligence Chatbot")
+overview_page = st.Page(
+    "pages/1_Project_Overview.py",
+    title="Project overview",
+    icon=":material/info:",
+)
 
-with st.sidebar:
-    st.page_link(
-        "pages/1_Project_Overview.py",
-        label="Project overview",
-        icon=":material/info:",
-        use_container_width=True,
-    )
-    st.subheader("Chat controls")
-    password = st.text_input("Password", type="password")
-    if st.button("Unlock chat", use_container_width=True):
-        if password == CHAT_PASSWORD:
-            st.session_state.chat_authenticated = True
-            st.success("Chat unlocked.")
-        else:
-            st.session_state.chat_authenticated = False
-            st.error("Incorrect password.")
 
-    if st.button("Clear chat", use_container_width=True):
-        st.session_state.chat_history = []
-        st.session_state.thread_id = str(uuid.uuid4())
-        st.session_state.pop("pending_query", None)
-        st.rerun()
+def render_chat_page() -> None:
+    """Render the password-gated chat and its query-history sidebar."""
+    st.title("Enterprise Financial Intelligence Chatbot")
 
-    st.divider()
-    st.subheader("Query history")
-    st.caption("Select an example to run it in the chat.")
-    for query_index, demo_query in enumerate(DEMO_QUERIES):
-        if st.button(
-            demo_query["label"],
-            key=f"demo_query_{query_index}",
-            use_container_width=True,
-            disabled=not st.session_state.chat_authenticated,
-        ):
-            st.session_state.pending_query = demo_query["query"]
+    with st.sidebar:
+        st.subheader("Chat controls")
+        password = st.text_input("Password", type="password")
+        if st.button("Unlock chat", use_container_width=True):
+            if password == CHAT_PASSWORD:
+                st.session_state.chat_authenticated = True
+                st.success("Chat unlocked.")
+            else:
+                st.session_state.chat_authenticated = False
+                st.error("Incorrect password.")
 
-    previous_queries = list(
-        dict.fromkeys(
-            message["content"]
-            for message in reversed(st.session_state.chat_history)
-            if message.get("role") == "user"
-        )
-    )
-    if previous_queries:
-        st.caption("Recent questions")
-        for query_index, previous_query in enumerate(previous_queries[:5]):
+        if st.button("Clear chat", use_container_width=True):
+            st.session_state.chat_history = []
+            st.session_state.thread_id = str(uuid.uuid4())
+            st.session_state.pop("pending_query", None)
+            st.rerun()
+
+        st.divider()
+        st.subheader("Query history")
+        st.caption("Select an example to run it in the chat.")
+        for query_index, demo_query in enumerate(DEMO_QUERIES):
             if st.button(
-                previous_query,
-                key=f"recent_query_{query_index}",
+                demo_query["label"],
+                key=f"demo_query_{query_index}",
                 use_container_width=True,
                 disabled=not st.session_state.chat_authenticated,
             ):
-                st.session_state.pending_query = previous_query
+                st.session_state.pending_query = demo_query["query"]
 
-if st.session_state.chat_authenticated:
-    for message in st.session_state.chat_history:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-            if message.get("chart_json"):
-                render_chart(message["chart_json"])
+        previous_queries = list(
+            dict.fromkeys(
+                message["content"]
+                for message in reversed(st.session_state.chat_history)
+                if message.get("role") == "user"
+            )
+        )
+        if previous_queries:
+            st.caption("Recent questions")
+            for query_index, previous_query in enumerate(previous_queries[:5]):
+                if st.button(
+                    previous_query,
+                    key=f"recent_query_{query_index}",
+                    use_container_width=True,
+                    disabled=not st.session_state.chat_authenticated,
+                ):
+                    st.session_state.pending_query = previous_query
 
-    prompt = st.chat_input("Ask a financial question")
-    prompt = st.session_state.pop("pending_query", None) or prompt
-    if prompt:
-        st.session_state.chat_history.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+    if st.session_state.chat_authenticated:
+        for message in st.session_state.chat_history:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+                if message.get("chart_json"):
+                    render_chart(message["chart_json"])
 
-        final_response = ""
-        chart_json: str | None = None
-        with st.chat_message("assistant"):
-            try:
-                with st.status(
-                    "Processing financial query...",
-                    expanded=True,
-                ) as progress:
-                    initial_state: dict[str, Any] = {
-                        "user_query": prompt,
-                        "chat_history": [
-                            {"role": item["role"], "content": item["content"]}
-                            for item in st.session_state.chat_history
-                        ],
-                        "routing_decision": {
-                            "needs_sql": False,
-                            "needs_rag": False,
-                            "needs_news": False,
-                            "needs_viz": False,
-                        },
-                        "schema": "",
-                        "sql_query": "",
-                        "sql_result": None,
-                        "retrieved_docs": [],
-                        "rag_context": "",
-                        "rag_answer": "",
-                        "external_context": "",
-                        "chart_json": "",
-                        "final_response": "",
-                        "retry_count": 0,
-                        "error": None,
-                    }
-                    result: dict[str, Any] = initial_state.copy()
-                    graph_config = {
-                        "configurable": {"thread_id": st.session_state.thread_id}
-                    }
-                    for event in agent_app.stream(
-                        initial_state,
-                        config=graph_config,
-                        stream_mode="updates",
-                    ):
-                        for event_node, event_update in event.items():
-                            if not isinstance(event_update, dict):
-                                continue
-                            result.update(event_update)
-                            update_progress(progress, event_node, event_update, result)
+        prompt = st.chat_input("Ask a financial question")
+        prompt = st.session_state.pop("pending_query", None) or prompt
+        if prompt:
+            st.session_state.chat_history.append({"role": "user", "content": prompt})
+            with st.chat_message("user"):
+                st.markdown(prompt)
 
-                    progress.update(
-                        label="Financial query processed",
-                        state="complete",
-                        expanded=False,
+            final_response = ""
+            chart_json: str | None = None
+            with st.chat_message("assistant"):
+                try:
+                    with st.status(
+                        "Processing financial query...",
+                        expanded=True,
+                    ) as progress:
+                        initial_state: dict[str, Any] = {
+                            "user_query": prompt,
+                            "chat_history": [
+                                {"role": item["role"], "content": item["content"]}
+                                for item in st.session_state.chat_history
+                            ],
+                            "routing_decision": {
+                                "needs_sql": False,
+                                "needs_rag": False,
+                                "needs_news": False,
+                                "needs_viz": False,
+                            },
+                            "schema": "",
+                            "sql_query": "",
+                            "sql_result": None,
+                            "retrieved_docs": [],
+                            "rag_context": "",
+                            "rag_answer": "",
+                            "external_context": "",
+                            "chart_json": "",
+                            "final_response": "",
+                            "retry_count": 0,
+                            "error": None,
+                        }
+                        result: dict[str, Any] = initial_state.copy()
+                        graph_config = {
+                            "configurable": {"thread_id": st.session_state.thread_id}
+                        }
+                        for event in agent_app.stream(
+                            initial_state,
+                            config=graph_config,
+                            stream_mode="updates",
+                        ):
+                            for event_node, event_update in event.items():
+                                if not isinstance(event_update, dict):
+                                    continue
+                                result.update(event_update)
+                                update_progress(
+                                    progress,
+                                    event_node,
+                                    event_update,
+                                    result,
+                                )
+
+                        progress.update(
+                            label="Financial query processed",
+                            state="complete",
+                            expanded=False,
+                        )
+
+                    final_response = str(
+                        result.get("final_response")
+                        or "I could not produce a response from the available data."
                     )
+                    chart_json = result.get("chart_json") or None
+                    st.markdown(final_response)
+                    if chart_json:
+                        render_chart(chart_json)
+                except Exception as exc:
+                    final_response = (
+                        "I couldn't process that request. Check the application "
+                        "configuration and logs, then try again."
+                    )
+                    st.error(final_response)
+                    st.caption(f"Error type: {type(exc).__name__}")
 
-                final_response = str(
-                    result.get("final_response")
-                    or "I could not produce a response from the available data."
-                )
-                chart_json = result.get("chart_json") or None
-                st.markdown(final_response)
-                if chart_json:
-                    render_chart(chart_json)
-            # This is the UI boundary for failures from multiple external services.
-            except Exception as exc:
-                final_response = (
-                    "I couldn't process that request. Check the application "
-                    "configuration and logs, then try again."
-                )
-                st.error(final_response)
-                st.caption(f"Error type: {type(exc).__name__}")
+            assistant_message: dict[str, str] = {
+                "role": "assistant",
+                "content": final_response,
+            }
+            if chart_json:
+                assistant_message["chart_json"] = chart_json
+            st.session_state.chat_history.append(assistant_message)
+    else:
+        st.info("Enter the password in the sidebar to start chatting.")
 
-        assistant_message: dict[str, str] = {
-            "role": "assistant",
-            "content": final_response,
-        }
-        if chart_json:
-            assistant_message["chart_json"] = chart_json
-        st.session_state.chat_history.append(assistant_message)
-else:
-    st.info("Enter the password in the sidebar to start chatting.")
+
+chat_page = st.Page(
+    render_chat_page,
+    title="Financial chat",
+    default=True,
+)
+selected_page = st.navigation(
+    [overview_page, chat_page],
+    position="sidebar",
+)
+selected_page.run()
